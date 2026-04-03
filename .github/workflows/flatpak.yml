@@ -32,8 +32,8 @@ jobs:
       - name: Install KDE runtime & SDK
         run: |
           sudo flatpak install -y --noninteractive flathub \
-            org.kde.Platform//6.8 \
-            org.kde.Sdk//6.8
+            org.kde.Platform//6.9 \
+            org.kde.Sdk//6.9
 
       - name: Build Flatpak
         run: |
@@ -42,7 +42,7 @@ jobs:
 
       - name: Validate metainfo
         run: |
-          flatpak run --command=appstreamcli org.kde.Sdk//6.8 \
+          flatpak run --command=appstreamcli org.kde.Sdk//6.9 \
             validate pkg/flatpak/io.github.lkm.lkm.metainfo.xml || true
 
       - name: Export bundle
