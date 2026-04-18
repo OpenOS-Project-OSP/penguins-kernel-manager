@@ -1,0 +1,163 @@
+# Converted from GitHub Actions — penguins-kernel-manager
+# Triggers: push/MR to main and feature/fix branches.
+
+stages:
+  - test
+  - type-check
+  - integration
+  - release
+
+default:
+  image: python:3.12
+
+.pip-cache: &pip-cache
+  cache:
+    key:
+      files: [pyproject.toml]
+    paths: [.venv/]
+  before_script:
+    - python -m venv .venv
+    - source .venv/bin/activate
+    - pip install -e ".[dev]"
+
+# ── Unit tests ────────────────────────────────────────────────────────────────
+.test-base:
+  stage: test
+  <<: *pip-cache
+  script:
+    - source .venv/bin/activate
+    - ruff check penguins_kernel_manager/
+    - pytest --tb=short --cov=penguins_kernel_manager --cov-report=term-missing
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH =~ /^(main|feat\/.+|fix\/.+)$/'
+
+test:python-3.11:
+  extends: .test-base
+  image: python:3.11
+
+test:python-3.12:
+  extends: .test-base
+  image: python:3.12
+  artifacts:
+    paths: [.coverage]
+    expire_in: 7 days
+
+test:alpine:
+  stage: test
+  image: python:3.12-alpine
+  before_script:
+    - apk add --no-cache gcc musl-dev linux-headers
+    - pip install -e ".[dev-no-gui]"
+  script:
+    - python -m pytest --tb=short
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH =~ /^(main|feat\/.+|fix\/.+)$/'
+
+# ── Type check ────────────────────────────────────────────────────────────────
+mypy:
+  stage: type-check
+  <<: *pip-cache
+  script:
+    - source .venv/bin/activate
+    - mypy penguins_kernel_manager/ --ignore-missing-imports
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH =~ /^(main|feat\/.+|fix\/.+)$/'
+
+# ── Integration tests (allowed to fail) ───────────────────────────────────────
+integration:apt:
+  stage: integration
+  image: ubuntu:22.04
+  allow_failure: true
+  before_script:
+    - apt-get update -qq && apt-get install -y python3-pip python3-venv
+    - python3 -m venv .venv && source .venv/bin/activate
+    - pip install -e ".[dev]"
+  script:
+    - source .venv/bin/activate
+    - pytest tests/integration/test_apt_backend.py -v --tb=short || true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+integration:pacman:
+  stage: integration
+  image: archlinux:latest
+  allow_failure: true
+  before_script:
+    - pacman -Sy --noconfirm python python-pip
+    - pip install -e ".[dev-no-gui]" --break-system-packages
+  script:
+    - python -m pytest tests/integration/test_pacman_backend.py -v --tb=short || true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ── PyPI publish (on tag) ─────────────────────────────────────────────────────
+build-dist:
+  stage: release
+  image: python:3.12
+  before_script:
+    - pip install build twine
+  script:
+    - python -m build
+    - twine check dist/*
+  artifacts:
+    paths: [dist/]
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+
+# ── Flatpak (on tag or MR touching pkg/flatpak) ───────────────────────────────
+flatpak:
+  stage: release
+  image: ubuntu:22.04
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils librsvg2-common
+    - flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+    - flatpak install -y --noninteractive flathub org.kde.Platform//6.7 org.kde.Sdk//6.7
+  script:
+    - flatpak-builder --force-clean --disable-rofiles-fuse build-dir pkg/flatpak/io.github.lkm.lkm.yml
+    - flatpak run --command=appstreamcli org.kde.Sdk//6.7 validate pkg/flatpak/io.github.lkm.lkm.metainfo.xml || true
+  artifacts:
+    paths: [LKM.flatpak]
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: [pkg/flatpak/**/*]
+
+# ── AppImage (on tag) ─────────────────────────────────────────────────────────
+appimage:x86_64:
+  stage: release
+  image: ubuntu:22.04
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends wget libfuse2 imagemagick python3-pip
+  script:
+    - ARCH=x86_64 OUT_DIR="${CI_PROJECT_DIR}/dist" bash pkg/appimage/build-appimage.sh
+  artifacts:
+    paths: [dist/LKM-*.AppImage]
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+
+# ── GitLab Release ────────────────────────────────────────────────────────────
+gitlab-release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs: [build-dist, flatpak, appimage:x86_64]
+  script:
+    - echo "Creating release $CI_COMMIT_TAG"
+  release:
+    tag_name: '$CI_COMMIT_TAG'
+    description: 'Penguins Kernel Manager $CI_COMMIT_TAG'
+    assets:
+      links:
+        - name: 'dist'
+          url: '$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/browse/dist?job=build-dist'
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
