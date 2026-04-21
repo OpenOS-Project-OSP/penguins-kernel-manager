@@ -143,7 +143,7 @@ GPL-3.0-or-later. See [LICENSE](LICENSE).
 
 ## Upstream
 
-Forked from [Interested-Deving-1896/lkm](https://gitlab.com/openos-project/linux-kernel_filesystem_deving/lkm),
+Forked from [openos-project/lkm](https://gitlab.com/openos-project/linux-kernel_filesystem_deving/lkm),
 which merges:
 - [lkf](https://gitlab.com/openos-project/linux-kernel_filesystem_deving/lkf) — Linux Kernel Framework
 - [ukm](https://gitlab.com/openos-project/linux-kernel_filesystem_deving/ukm) — Universal Kernel Manager
