@@ -32,8 +32,8 @@ jobs:
       - name: Install KDE runtime & SDK
         run: |
           sudo flatpak install -y --noninteractive flathub \
-            org.kde.Platform//6.7 \
-            org.kde.Sdk//6.7
+            org.kde.Platform//6.8 \
+            org.kde.Sdk//6.8
 
       - name: Build Flatpak
         run: |
@@ -42,7 +42,7 @@ jobs:
 
       - name: Validate metainfo
         run: |
-          flatpak run --command=appstreamcli org.kde.Sdk//6.7 \
+          flatpak run --command=appstreamcli org.kde.Sdk//6.8 \
             validate pkg/flatpak/io.github.penguins-kernel-manager.penguins-kernel-manager.metainfo.xml || true
 
       - name: Export bundle
